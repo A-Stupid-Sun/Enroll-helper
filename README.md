@@ -67,3 +67,7 @@ Run command:
 4, Jan, 2023:
 
 `ddddocr` is used to fill in the captcha when logining and selecting courses.
+
+## Why do this update
+
+在当前几乎所有大学都采用抽签方式选课的今天，UCAS仍然采用抢课方式进行选课，这为选课引入了过多的其他因素，尤其是网络质量的好坏和服务器随机产生的各种错误的概率。希望UCAS早日改用抽签方式选课。
