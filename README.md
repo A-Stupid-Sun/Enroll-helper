@@ -5,11 +5,13 @@ https://github.com/LyleMi/ucas
 
 Create a file named `auth` and fill in your username and password for SEP. Example:
 ```
-i@iie.ac.cn
-inputpassword
+username@mails.ucas.ac.cn
+RSA(password)
 ```
 
-The first line stands for username and the second password.
+The first line stands for username and the second line stands for RSA of password.
+
+It is recommonded that you should get your RSA of password using an F12 tool (in Chrome or Edge). It's named `pwd` in your `slogin` POST.
 
 Create a file named `courseid` and fill in your willing course's ID. Example:
 
