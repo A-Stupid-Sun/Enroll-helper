@@ -7,12 +7,19 @@ import sys
 import time
 import random
 import pickle
-import logging
+from loguru import logger
 import requests
+import json
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
+from base64 import b64decode, b64encode
+import tabulate
+from prettytable import PrettyTable
 
 from config import Config
 from mailer import sendemail
 import captcha as cpt
+from utils import score_to_gpa
 
 CollegeCode = {
     '0701': '数学',
@@ -52,23 +59,24 @@ CollegeCode = {
 
 
 class Login:
-    page = 'http://sep.ucas.ac.cn'
+    page = 'https://sep.ucas.ac.cn'
     url = page + '/slogin'
     system = page + '/portal/site/226/821'
     pic = page + '/changePic'
 
 
 class Course:
-    base = 'http://jwxk.ucas.ac.cn'
+    base = 'https://jwxk.ucas.ac.cn'
     identify = base + '/login?Identity='
     selected = base + '/courseManage/selectedCourse'
     selection = base + '/courseManage/main'
     category = base + '/courseManage/selectCourse?s='
     save = base + '/courseManage/saveCourse?s='
+    score = base + '/score/yjs/all.json'
     captcha = base + '/captchaImage'
 
 
-class NetworkSucks(Exception):
+class BadNetwork(Exception):
     pass
 
 
@@ -77,7 +85,6 @@ class AuthInvalid(Exception):
 
 
 class Cli(object):
-
     headers = {
         'Connection': 'keep-alive',
         'Pragma': 'no-cache',
@@ -89,26 +96,38 @@ class Cli(object):
         'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6',
     }
 
-    def __init__(self, user, password, captcha=False):
+    def __init__(self, user, password):
         super(Cli, self).__init__()
-        self.logger = logging.getLogger('logger')
+        self.gpa = None
+        self.student = None
+        self.courseFinished = None
+        self.logger = logger
         self.s = requests.Session()
         self.s.headers = self.headers
         self.s.timeout = Config.timeout
-        self.login(user, password, captcha)
+        self.login(user, password)
         self.initCourse()
 
     def get(self, url, *args, **kwargs):
         r = self.s.get(url, *args, **kwargs)
         if r.status_code != requests.codes.ok:
-            raise NetworkSucks
+            raise BadNetwork
         return r
 
     def post(self, url, *args, **kwargs):
         r = self.s.post(url, *args, **kwargs)
         if r.status_code != requests.codes.ok:
-            raise NetworkSucks
+            raise BadNetwork
         return r
+
+    def encode_password(self, password):
+        r = self.get(url=Login.page)
+        pubkey_re = re.compile(r"jsePubKey = '(.*)';")
+        pubkey = pubkey_re.findall(r.text)[0]
+        pubkey = '-----BEGIN PUBLIC KEY-----\n' + pubkey + '\n-----END PUBLIC KEY-----'
+        cipher = Cipher_PKCS1_v1_5.new(RSA.importKey(pubkey))
+        cipher_b64 = cipher.encrypt(password.encode())
+        return b64encode(cipher_b64).decode()
 
     def initCourse(self):
         self.courseid = []
@@ -118,31 +137,31 @@ class Cli(object):
                 if len(tmp):
                     self.courseid.append(tmp.split(','))
 
-    def login(self, user, password, captcha):
-        if os.path.exists('cookie.pkl'):
+    def login(self, user, password):
+        if os.path.exists('cookie.dat'):
             self.load()
             if self.auth():
                 return
             else:
                 self.logger.debug('cookie expired...')
-                os.unlink('cookie.pkl')
+                os.unlink('cookie.dat')
         self.get(Login.page)
+        password_rsa = self.encode_password(password)
         data = {
             'userName': user,
-            'pwd': password,
+            'pwd': password_rsa,
             'sb': 'sb'
         }
-        if captcha:
-            login_captcha = self.get(Login.pic).content
-            certCode = cpt.recognize_login(login_captcha)
-            print('Login Cert Code = ', certCode)
-            data['certCode'] = certCode
+        login_captcha = self.get(Login.pic).content
+        cert_code = cpt.recognize_login(login_captcha)
+        self.logger.debug(f'login cert code = {cert_code}')
+        data['certCode'] = cert_code
         self.post(Login.url, data=data)
-        print(self.s.cookies.get_dict())
         if 'sepuser' not in self.s.cookies.get_dict():
             self.logger.error('login fail...')
             sys.exit()
         self.save()
+        self.logger.debug(f'cookies saved = {self.s.cookies.get_dict()}')
         self.auth()
 
     def auth(self):
@@ -151,19 +170,19 @@ class Cli(object):
         if len(identity) < 2:
             self.logger.error('login fail')
             return False
-        identityUrl = identity[1].split('"')[0]
-        self.identity = identityUrl.split('Identity=')[1].split('&')[0]
-        self.get(identityUrl)
+        identity_url = identity[1].split('"')[0]
+        # self.identity = identity_url.split('Identity=')[1].split('&')[0]
+        self.get(identity_url)
         return True
 
     def save(self):
-        self.logger.debug('save cookie...')
-        with open('cookie.pkl', 'wb') as f:
+        self.logger.debug('save cookie as cookie.dat')
+        with open('cookie.dat', 'wb') as f:
             pickle.dump(self.s.cookies, f)
 
     def load(self):
         self.logger.debug('loading cookie...')
-        with open('cookie.pkl', 'rb') as f:
+        with open('cookie.dat', 'rb') as f:
             cookies = pickle.load(f)
             self.s.cookies = cookies
 
@@ -172,7 +191,7 @@ class Cli(object):
         if 'loginSuccess' not in r.text:
             # <label id="loginSuccess" class="success"></label>
             raise AuthInvalid
-        courseid = []
+        course_id = []
         self.logger.debug(self.courseid)
         for info in self.courseid:
             cid = info[0]
@@ -181,13 +200,13 @@ class Cli(object):
                 self.logger.info('course %s already selected' % cid)
                 continue
             error = self.enrollCourse(cid, college)
-            if error:
+            if error and error != "Time Unavailable":
                 self.logger.debug(
                     'try enroll course %s fail: %s' % (cid, error))
-                courseid.append(info)
+                course_id.append(info)
             else:
                 self.logger.debug("enroll course %s success" % cid)
-        return courseid
+        return course_id
 
     def enrollCourse(self, cid, college):
         r = self.get(Course.selection)
@@ -209,13 +228,13 @@ class Cli(object):
         courseCode = courseCodeRe.findall(r.text)
         if not courseCode:
             return "Course Not Found"
-            
-        unselectableRe = re.compile(r'type="checkbox" name="sids" value="'+ courseCode[0] +r'"  disabled/>')
+
+        unselectableRe = re.compile(r'type="checkbox" name="sids" value="' + courseCode[0] + r'"  disabled/>')
         unselectable = len(unselectableRe.findall(r.text)) > 0
         if unselectable:
             return "Unselectable Course"
 
-        fidRe = re.compile(r'"fid_'+ courseCode[0] + r'" value="([0-9]{6})"')
+        fidRe = re.compile(r'"fid_' + courseCode[0] + r'" value="([0-9]{6})"')
         fid_temp = fidRe.findall(r.text)
         code = courseCode[0]
         fid = fid_temp[0]
@@ -229,11 +248,11 @@ class Cli(object):
                 enroll_captcha = self.get(Course.captcha).content
                 vcode = cpt.recognize(enroll_captcha)
             data = {
-                    "_csrftoken": csrf_token,
-                    "deptIds": deptid,
-                    "sids": code,
-                    "vcode": vcode,
-                    f"fid_{code}": fid,
+                "_csrftoken": csrf_token,
+                "deptIds": deptid,
+                "sids": code,
+                "vcode": vcode,
+                f"fid_{code}": fid,
             }
             courseSaveUrl = Course.save + identity
 
@@ -245,55 +264,70 @@ class Cli(object):
             elif '选课成功' in r.text:
                 return None
             elif '超过限选人数' in r.text:
-                return "Unselectable Course"
+                return "CourStack Overflow"
+            elif '上课时间冲突' in r.text:
+                return "Time Unavailable"
             else:
                 return "Failure in Enrollment"
         return f'Captcha Fails {repeatFlag} Times'
-            
-            
-def initLogger():
-    formatStr = '[%(asctime)s] [%(levelname)s] %(message)s'
-    logger = logging.getLogger('logger')
-    logger.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler()
-    chformatter = logging.Formatter(formatStr)
-    ch.setLevel(logging.DEBUG)
-    ch.setFormatter(chformatter)
-    logger.addHandler(ch)
+
+    def getStudentInfo(self):
+        r = self.get(Course.score)
+        if 'gpa' not in r.text:
+            # <label id="loginSuccess" class="success"></label>
+            raise AuthInvalid
+        jsonobj = json.loads(r.text)
+        self.student = jsonobj['student']
+        self.gpa = jsonobj['gpa']
+        self.courseFinished = jsonobj['list']
+
+    def score(self):
+        self.getStudentInfo()
+        self.logger.info('making transcript')
+        table = PrettyTable()
+
+        table.title = f"{self.student['xm']} - {self.student['xh']} 的成绩单  GPA = {self.gpa}"
+        table.field_names = ['序号', '课程名称', '学分', '得分', '绩点']
+        for i, v in enumerate(self.courseFinished):
+            table.add_row([i + 1, v['courseName'], v['courseCredit'], v['score'], score_to_gpa(v['score'])])
+        print(table)
 
 
 def main():
-    initLogger()
     with open('auth', 'r', encoding='utf8') as fh:
         user = fh.readline().strip()
         password = fh.readline().strip()
-    if '-c' in sys.argv or 'captcha' in sys.argv:
-        captcha = True
-    else:
-        captcha = False
-    c = Cli(user, password, captcha)
+    c = Cli(user, password)
+    func = None
+    if 'enroll' in sys.argv:
+        func = 'enroll'
+    elif 'gpa' in sys.argv:
+        func = 'transcript'
     reauth = False
     while True:
         try:
             if reauth:
                 c.auth()
                 reauth = False
-
-            courseid = c.enroll()
-            if not courseid:
+            if func == 'enroll':
+                courseid = c.enroll()
+                if not courseid:
+                    break
+                c.courseid = courseid
+                time.sleep(Config.minIdle - random.random() * (Config.minIdle - Config.maxIdle))
+            elif func == 'transcript':
+                c.score()
                 break
-            c.courseid = courseid
-            time.sleep(Config.minIdle - random.random() * (Config.minIdle - Config.maxIdle))
         except IndexError as e:
-            c.logger.info("Course not found, maybe not start yet")
+            c.logger.info("Course Not Found")
             time.sleep(Config.minIdle - random.random() * (Config.minIdle - Config.maxIdle))
         except KeyboardInterrupt as e:
-            c.logger.info('user abored')
+            c.logger.info('user aborted')
             break
         except (
-            NetworkSucks,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.ConnectTimeout
+                BadNetwork,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ConnectTimeout
         ) as e:
             c.logger.debug('network error')
         except AuthInvalid as e:
@@ -303,13 +337,6 @@ def main():
             # reauth next loop
         except Exception as e:
             c.logger.error(repr(e))
-    if ('-m' in sys.argv or 'mail' in sys.argv) and os.path.exists('mailconfig'):
-        with open('mailconfig', 'rb') as fh:
-            user = fh.readline().strip()
-            pwd = fh.readline().strip()
-            smtpServer = fh.readline().strip()
-            receiver = fh.readline().strip()
-            sendemail(user, pwd, smtpServer, receiver)
 
 
 if __name__ == '__main__':

@@ -3,7 +3,9 @@ import time
 import PIL.Image
 
 int_char = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-ocr = ddddocr.DdddOcr()
+ocr = ddddocr.DdddOcr(show_ad=False)
+
+
 def recognize(captcha_bytes):
     with open('cache.jpg', 'wb') as f:
         f.write(captcha_bytes)
@@ -22,24 +24,18 @@ def recognize(captcha_bytes):
     r2 = int(res[2])
     op = res[1]
     if op == '+':
-        save_captcha(res, captcha_bytes)
         return r1 + r2
     elif op == '*' or op == 'x' or op == 'X':
-        save_captcha(res, captcha_bytes)
         return r1 * r2
     elif op == '/':
-        save_captcha(res, captcha_bytes)
         return r1 // r2
     else:
         return None
 
+
 def recognize_login(captcha_bytes):
     return ocr.classification(captcha_bytes)
 
-def save_captcha(res, captcha_bytes):
-        # with open(f'captcha/{res}.jpg', 'wb+') as f:
-        #     f.write(captcha_bytes)
-    pass
 
 if __name__ == '__main__':
     with open('captchaImage2.jpg', 'rb') as f:
