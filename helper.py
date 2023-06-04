@@ -13,11 +13,9 @@ import json
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
 from base64 import b64decode, b64encode
-import tabulate
 from prettytable import PrettyTable
 
 from config import Config
-from mailer import sendemail
 import captcha as cpt
 from utils import score_to_gpa
 
@@ -226,6 +224,9 @@ class Cli(object):
         r = self.post(categoryUrl, data=data)
         courseCodeRe = re.compile(r'<span id="courseCode_([A-F0-9]{16})">' + cid + "<\/span>")
         courseCode = courseCodeRe.findall(r.text)
+        isUnvalidSelectCourse = "未开通选课权限" in r.text
+        if isUnvalidSelectCourse:
+            return "Unvalid Select Course"
         if not courseCode:
             return "Course Not Found"
 
@@ -283,9 +284,8 @@ class Cli(object):
 
     def score(self):
         self.getStudentInfo()
-        self.logger.info('making transcript')
+        self.logger.info('making transcript...')
         table = PrettyTable()
-
         table.title = f"{self.student['xm']} - {self.student['xh']} 的成绩单  GPA = {self.gpa}"
         table.field_names = ['序号', '课程名称', '学分', '得分', '绩点']
         for i, v in enumerate(self.courseFinished):
@@ -303,6 +303,9 @@ def main():
         func = 'enroll'
     elif 'gpa' in sys.argv:
         func = 'transcript'
+    elif 'clean_cookie' in sys.argv:
+        os.unlink('cookie.dat')
+        sys.exit()
     reauth = False
     while True:
         try:
@@ -327,7 +330,7 @@ def main():
         except (
                 BadNetwork,
                 requests.exceptions.ConnectionError,
-                requests.exceptions.ConnectTimeout
+                requests.exceptions.ConnectTimeout,
         ) as e:
             c.logger.debug('network error')
         except AuthInvalid as e:
