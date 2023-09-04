@@ -19,9 +19,11 @@ pwd(capture in browser as picture above)
 your_user_id(capture in browser as picture above in https://sep.ucas.ac.cn/user/userVisit)
 ```
 
-The first line stands for username and the second line stands for RSA of password.
+The first line stands for username and the second line stands for RSA of password(already implement in slogin post request).
 
 It is recommonded that you should get your RSA of password using an F12 tool (in Chrome or Edge). It's named `pwd` in your `slogin` POST.
+
+The third line stands for the user_id when you first login in a new device,you can capture in the browser, maybe it's not important and could be 123456,I haven't test this config.
 
 Create a file named `courseid` and fill in your willing course's ID. Example:
 
@@ -71,8 +73,11 @@ Create a file named `courseid` and fill in your willing course's ID. Example:
 
 ## Usage
 Run command:
-
- ``python enroll.py -c`` 
+```python
+ python helper.py gpa
+ python helper.py enroll
+ python helper.py clean_cookie
+```
 
 ## Update
 4, Sep, 2023
