@@ -61,6 +61,7 @@ class Login:
     url = page + '/slogin'
     system = page + '/portal/site/226/821'
     pic = page + '/changePic'
+    captcha_url = "https://sep.ucas.ac.cn/user/doUserVisit"
 
 
 class Course:
@@ -94,12 +95,13 @@ class Cli(object):
         'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6',
     }
 
-    def __init__(self, user, password):
+    def __init__(self, user, password, user_id):
         super(Cli, self).__init__()
         self.gpa = None
         self.student = None
         self.courseFinished = None
         self.logger = logger
+        self.user_id=user_id
         self.s = requests.Session()
         self.s.headers = self.headers
         self.s.timeout = Config.timeout
@@ -118,15 +120,6 @@ class Cli(object):
             raise BadNetwork
         return r
 
-    def encode_password(self, password):
-        r = self.get(url=Login.page)
-        pubkey_re = re.compile(r"jsePubKey = '(.*)';")
-        pubkey = pubkey_re.findall(r.text)[0]
-        pubkey = '-----BEGIN PUBLIC KEY-----\n' + pubkey + '\n-----END PUBLIC KEY-----'
-        cipher = Cipher_PKCS1_v1_5.new(RSA.importKey(pubkey))
-        cipher_b64 = cipher.encrypt(password.encode())
-        return b64encode(cipher_b64).decode()
-
     def initCourse(self):
         self.courseid = []
         with open('courseid', 'r', encoding='utf8') as fh:
@@ -144,17 +137,31 @@ class Cli(object):
                 self.logger.debug('cookie expired...')
                 os.unlink('cookie.dat')
         self.get(Login.page)
-        password_rsa = self.encode_password(password)
         data = {
             'userName': user,
-            'pwd': password_rsa,
+            'pwd': password,
             'sb': 'sb'
         }
         login_captcha = self.get(Login.pic).content
         cert_code = cpt.recognize_login(login_captcha)
         self.logger.debug(f'login cert code = {cert_code}')
         data['certCode'] = cert_code
-        self.post(Login.url, data=data)
+        response = self.s.post(Login.url, data=data)
+        reditList = response.history  # 可以看出获取的是一个地址序列
+        self.logger.debug(reditList[len(reditList) - 1].text)
+        if reditList[len(reditList) - 1].headers["location"]== r'/user/userVisit':
+            self.logger.info("first login, please input your receive captcha in your email! ")
+            input_captcha=input("input your code in this line:")
+            data={
+                # if you don't know your user_id, please captcha your user_id manually in your browser
+                # you can capture your usserId when you visit https://sep.ucas.ac.cn/user/userVisit(By 303 moved)
+                'userId':self.user_id,
+                'userName': user,
+                'yz': input_captcha,
+                'sb':'y'
+            }
+            resp = self.s.post(Login.captcha_url, data=data)
+            self.logger.info("captcha finished, please rerun this program after 3s again! ")
         if 'sepuser' not in self.s.cookies.get_dict():
             self.logger.error('login fail...')
             sys.exit()
@@ -212,6 +219,7 @@ class Cli(object):
         deptIds = depRe.findall(r.text)
         collegeName = college if college else CollegeCode[cid[:4]]
         for dep in deptIds:
+            # print(dep)
             if collegeName in dep[1]:
                 deptid = dep[0]
                 break
@@ -297,7 +305,8 @@ def main():
     with open('auth', 'r', encoding='utf8') as fh:
         user = fh.readline().strip()
         password = fh.readline().strip()
-    c = Cli(user, password)
+        user_id=fh.readline().strip()
+    c = Cli(user, password, user_id)
     func = None
     if 'enroll' in sys.argv:
         func = 'enroll'
