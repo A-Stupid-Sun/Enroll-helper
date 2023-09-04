@@ -1,12 +1,22 @@
 # UCAS Enroll Helper
+
 ## Original Repo
+https://github.com/amefumi/UCAS-enroll
+## Original Repo 2
 https://github.com/LyleMi/ucas
 ## Init
 
 Create a file named `auth` and fill in your username and password for SEP. Example:
 ```
 username@mails.ucas.ac.cn
-RSA(password)
+```
+![img.png](img.png)
+```
+pwd(capture in browser as picture above)
+```
+![img_1.png](img_1.png)
+```
+your_user_id(capture in browser as picture above in https://sep.ucas.ac.cn/user/userVisit)
 ```
 
 The first line stands for username and the second line stands for RSA of password.
@@ -65,6 +75,9 @@ Run command:
  ``python enroll.py -c`` 
 
 ## Update
+4, Sep, 2023
+
+modify the helper.py function to adapt the change of captcha in slogin 
 
 4, Jan, 2023:
 
