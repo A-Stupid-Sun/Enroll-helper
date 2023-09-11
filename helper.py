@@ -123,6 +123,18 @@ class Cli(object):
             raise BadNetwork
         return r
 
+    def send_message(self, title: str, content: str):
+        res = requests.get(
+            url='http://www.pushplus.plus/send',
+            params={
+                'token': "your_token",
+                'title': title,
+                'content': content
+            }
+        )
+        if res.status_code != 200:
+            self.logger.debug('推送失败: ' + res.text)
+
     def initCourse(self):
         self.courseid = []
         with open('courseid', 'r', encoding='utf8') as fh:
@@ -213,12 +225,14 @@ class Cli(object):
             if error is not None:
                 if error == "Time Unavailable":
                     self.logger.info('course %s time conflict' % cid)
+                    self.send_message('course %s time conflict' % cid, 'course %s time conflict' % cid)
                 else:
                     self.logger.debug(
                         'try enroll course %s fail: %s' % (cid, error))
                     course_id.append(info)
             else:
                 self.logger.debug("enroll course %s success" % cid)
+                self.send_message("enroll course %s success" % cid , " enroll course %s success" % cid)
         return course_id
 
     def enrollCourse(self, cid, college):

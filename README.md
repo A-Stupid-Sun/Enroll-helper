@@ -29,11 +29,11 @@ The third line stands for the user_id when you first login in a new device,you c
 Create a file named `courseid` and fill in your willing course's ID. Example:
 
 ```
-091M5023H,xx学院
-091M4002H
+180086081200P1005H,xx学院
+180086081200P1006H,xx学院
 ```
 
-`xx学院` is optianal. Course ID and department name should be seperated by `,` (English Comma).
+`xx学院` is necessary. Course ID and department name should be seperated by `,` (English Comma).
 
 ### Examples for Department Name:
 - 数学学院
