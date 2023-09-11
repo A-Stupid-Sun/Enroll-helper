@@ -1,5 +1,6 @@
-# UCAS Enroll Helper
-
+# Enroll Helper
+## What You Must Know
+This repo is ONLY a FRAMEWORK for course enrollment and has NOT ever be set to any specific school. This repo should NOT be used out of learning use.
 ## Original Repo
 https://github.com/amefumi/UCAS-enroll
 ## Original Repo 2
@@ -54,8 +55,8 @@ Create a file named `courseid` and fill in your willing course's ID. Example:
 - 中丹学院
 - 国际学院
 - 存济医学院
-- 体育教研室
-- 微电子学院
+- 体育部
+- 集成电路学院
 - 未来技术学院
 - 网络空间安全学院
 - 心理学系
@@ -65,11 +66,19 @@ Create a file named `courseid` and fill in your willing course's ID. Example:
 - 光电学院
 - 创新创业学院
 - 核学院
+- 现代产业学院
 - 现代农业科学学院
 - 化学工程学院
 - 海洋学院
 - 航空宇航学院
-- 杭州高等研究院
+- 南京学院
+- 应急管理科学与工程学院
+- 人居科学学院
+- MBA
+- MPA
+- MEMEM
+- 密码学院
+
 
 ## Usage
 Run command:

@@ -10,9 +10,6 @@ import pickle
 from loguru import logger
 import requests
 import json
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
-from base64 import b64decode, b64encode
 from prettytable import PrettyTable
 
 from config import Config
@@ -55,6 +52,12 @@ CollegeCode = {
     '0452': '体育',
 }
 
+CollegeMap = {
+    '计算机学院': '951',
+    '物理学院': '245',
+    '化学学院': '246',
+    '体育部': '946',
+}
 
 class Login:
     page = 'https://sep.ucas.ac.cn'
@@ -65,7 +68,7 @@ class Login:
 
 
 class Course:
-    base = 'https://jwxk.ucas.ac.cn'
+    base = 'https://jwxkts2.ucas.ac.cn'
     identify = base + '/login?Identity='
     selected = base + '/courseManage/selectedCourse'
     selection = base + '/courseManage/main'
@@ -193,6 +196,7 @@ class Cli(object):
 
     def enroll(self):
         r = self.get(Course.selection)
+        # self.logger.debug(r.text)
         if 'loginSuccess' not in r.text:
             # <label id="loginSuccess" class="success"></label>
             raise AuthInvalid
@@ -205,33 +209,44 @@ class Cli(object):
                 self.logger.info('course %s already selected' % cid)
                 continue
             error = self.enrollCourse(cid, college)
-            if error and error != "Time Unavailable":
-                self.logger.debug(
-                    'try enroll course %s fail: %s' % (cid, error))
-                course_id.append(info)
+            # self.logger.debug(error)
+            if error is not None:
+                if error == "Time Unavailable":
+                    self.logger.info('course %s time conflict' % cid)
+                else:
+                    self.logger.debug(
+                        'try enroll course %s fail: %s' % (cid, error))
+                    course_id.append(info)
             else:
                 self.logger.debug("enroll course %s success" % cid)
         return course_id
 
     def enrollCourse(self, cid, college):
         r = self.get(Course.selection)
-        depRe = re.compile(r'<label for="id_([0-9]{3})">(.*)<\/label>')
+        identity = r.text.split('action="/courseManage/selectCourse?s=')[1].split('"')[0]
+        categoryUrl = Course.category + identity
+        r = self.get(categoryUrl)
+        depRe = re.compile(r'<option value="(\d{3})"\s*>\s*([^<]+)\s*</option>')
         deptIds = depRe.findall(r.text)
-        collegeName = college if college else CollegeCode[cid[:4]]
+        collegeName = college
+        if collegeName is None:
+            return "Please specify the college name"
+        deptid = None
         for dep in deptIds:
-            # print(dep)
             if collegeName in dep[1]:
                 deptid = dep[0]
                 break
-        identity = r.text.split('action="/courseManage/selectCourse?s=')[1].split('"')[0]
+        if deptid is None:
+            return "College Not Found, Please check in README.md"
         data = {
             "deptIds": deptid,
-            "sb": 0
+            "courseCode": cid,
         }
-        categoryUrl = Course.category + identity
         r = self.post(categoryUrl, data=data)
+        # self.logger.debug(r.text)
         courseCodeRe = re.compile(r'<span id="courseCode_([A-F0-9]{16})">' + cid + "<\/span>")
         courseCode = courseCodeRe.findall(r.text)
+        self.logger.debug(courseCode)
         isUnvalidSelectCourse = "未开通选课权限" in r.text
         if isUnvalidSelectCourse:
             return "Unvalid Select Course"
@@ -247,8 +262,6 @@ class Cli(object):
         fid_temp = fidRe.findall(r.text)
         code = courseCode[0]
         fid = fid_temp[0]
-        csrf_re = re.compile(r'name="_csrftoken" value="(.*)"')
-        csrf_token = csrf_re.findall(r.text)[0]
         vcode = None
 
         repeatFlag = 0
@@ -257,25 +270,27 @@ class Cli(object):
                 enroll_captcha = self.get(Course.captcha).content
                 vcode = cpt.recognize(enroll_captcha)
             data = {
-                "_csrftoken": csrf_token,
                 "deptIds": deptid,
                 "sids": code,
                 "vcode": vcode,
                 f"fid_{code}": fid,
             }
             courseSaveUrl = Course.save + identity
-
             self.s.headers["Referer"] = categoryUrl
             r = self.post(courseSaveUrl, data=data)
             del self.s.headers["Referer"]
+
             if '验证码不正确' in r.text:
+                self.logger.debug('captcha error, try again')
                 repeatFlag += 1
-            elif '选课成功' in r.text:
-                return None
             elif '超过限选人数' in r.text:
+                self.logger.debug('course %s is full' % cid)
                 return "CourStack Overflow"
             elif '上课时间冲突' in r.text:
+                self.logger.debug('course %s time conflict' % cid)
                 return "Time Unavailable"
+            elif '选课成功' in r.text:
+                return None
             else:
                 return "Failure in Enrollment"
         return f'Captcha Fails {repeatFlag} Times'
